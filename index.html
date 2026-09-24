@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
-<title>ひぐりんご - 九大プログラム学習</title>
+<title>ひぐりんご</title>
 <style>
   :root { --accent:#ff6b35; --bg:#fafafa; --card:#fff; --text:#222; --muted:#888; --good:#2e9e4f; --bad:#e0453c; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -96,6 +96,8 @@
   @keyframes shrink { 45% { transform:scale(.55); opacity:.5; } }
   .higu.shake .body { animation:shake .45s ease; }
   .higu-lane { height:64px; margin:-4px 0 6px; }
+  .brand { text-align:center; margin:28px 0 8px; }
+  .brand h1 { margin:6px 0 0; font-size:1.6rem; letter-spacing:.05em; }
   /* --- home layout --- */
   .hero { display:flex; align-items:center; gap:14px; padding:14px 18px; }
   .hero-streak { font-size:1.15rem; font-weight:800; }
@@ -125,7 +127,7 @@
 
   <!-- Access key screen -->
   <div id="keyScreen">
-    <h1>🎓 ひぐりんご<br><small style="font-size:0.9rem;color:#888">九大プログラム学習</small></h1>
+    <div class="brand"><div class="higu big normal"></div><h1>ひぐりんご</h1></div>
     <div class="card">
       <label style="font-weight:600;">合言葉を入力</label>
       <input id="keyInput" type="password" placeholder="担当者に確認してください" style="margin-top:8px;">
@@ -136,7 +138,7 @@
 
   <!-- Login screen -->
   <div id="loginScreen" class="hidden">
-    <h1>🎓 ひぐりんご<br><small style="font-size:0.9rem;color:#888">九大プログラム学習</small></h1>
+    <div class="brand"><div class="higu big normal"></div><h1>ひぐりんご</h1></div>
     <div class="card">
       <label style="font-weight:600;">担当者名を選択</label>
       <select id="userSelect" style="margin-top:8px;"></select>
