@@ -13,11 +13,9 @@ function shuffle_(arr, rand) {
 
 function buildShuffledQuestion(q, rand) {
   const order = shuffle_([0, 1, 2, 3], rand);
-  return {
-    shuffledChoices: order.map(i => q.choices[i]),
-    shuffledCorrectIdx: order.indexOf(q.correct_idx),
-  };
+  return { order, shuffledCorrectIdx: order.indexOf(Number(q.correct_idx)) };
 }
+const render = (q, sq, lang) => sq.order.map(i => (lang === "en" ? q.choices_en : q.choices)[i]);
 
 function assert(cond, msg) { if (!cond) throw new Error("FAIL: " + msg); }
 
@@ -28,13 +26,14 @@ function seededRand(seed) {
 }
 
 function demo() {
-  const q = { choices: ["A", "B", "C", "D"], correct_idx: 0 };
+  const q = { choices: ["A", "B", "C", "D"], choices_en: ["a", "b", "c", "d"], correct_idx: "0" }; // Sheets may return "0"
   for (let seed = 1; seed <= 50; seed++) {
     const rand = seededRand(seed);
     const r = buildShuffledQuestion(q, rand);
-    assert(r.shuffledChoices.length === 4, "shuffled choices must keep all 4");
-    assert(new Set(r.shuffledChoices).size === 4, "no duplicate choices after shuffle");
-    assert(r.shuffledChoices[r.shuffledCorrectIdx] === "A", "shuffledCorrectIdx must point at the original correct choice");
+    const ja = render(q, r, "ja"), en = render(q, r, "en");
+    assert(new Set(ja).size === 4, "no duplicate choices after shuffle");
+    assert(ja[r.shuffledCorrectIdx] === "A", "shuffledCorrectIdx must point at the original correct choice");
+    assert(en[r.shuffledCorrectIdx] === "a", "switching language mid-question keeps the same correct slot");
   }
   console.log("demo: all checks passed");
 }

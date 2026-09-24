@@ -37,6 +37,11 @@
   .top-nav { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; color:var(--muted); font-size:0.85rem; }
   .badge { background:var(--accent); color:#fff; border-radius:20px; padding:2px 10px; font-size:0.8rem; }
   .empty { text-align:center; color:var(--muted); padding:30px 0; }
+  .cat { display:inline-block; color:#fff; border-radius:6px; padding:2px 8px; font-size:0.75rem; font-weight:700; letter-spacing:.02em; }
+  .cat-ENG { background:#2563eb; } .cat-ISI { background:#7c3aed; } .cat-BIO { background:#16a34a; }
+  .cat-COMMON { background:#6b7280; } .cat-IEFT { background:#dc2626; }
+  .quiz-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .lang-toggle { cursor:pointer; color:var(--muted); font-size:0.85rem; user-select:none; }
 </style>
 </head>
 <body>
@@ -72,7 +77,7 @@
     <div class="top-nav">
       <span id="homeUserName"></span>
       <span>
-        <span id="langToggle" style="cursor:pointer;margin-right:14px;">🌐 <b id="langLabel">EN</b></span>
+        <span class="lang-toggle" style="margin-right:14px;">🌐 <b class="lang-label">EN</b></span>
         <span id="switchUserBtn" style="cursor:pointer;">切り替え</span>
       </span>
     </div>
@@ -92,7 +97,10 @@
     <div class="progressbar"><div class="progressbar-fill" id="qProgressFill" style="width:0%"></div></div>
     <div class="card">
       <div id="reviewBadge" class="review-badge hidden">🔁 復習ラウンド</div>
-      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px;" id="qProgram"></div>
+      <div class="quiz-head">
+        <span id="qProgram" class="cat"></span>
+        <span class="lang-toggle">🌐 <b class="lang-label">EN</b></span>
+      </div>
       <div class="question" id="qText"></div>
       <div id="choicesBox"></div>
       <div id="feedbackBox" class="feedback hidden"></div>
@@ -148,6 +156,8 @@ function shuffle_(arr) {
   return a;
 }
 
+const CAT_LABEL = { ENG:"Engineering", ISI:"ISI", BIO:"Bio", COMMON:"Common", IEFT:"IEFT" };
+
 // EN/JA text picker: falls back to JA if an EN field is missing.
 function qText(q, field) {
   if (state.lang === "en" && q[field + "_en"]) return q[field + "_en"];
@@ -156,12 +166,18 @@ function qText(q, field) {
 function qChoices(q) {
   return (state.lang === "en" && q.choices_en) ? q.choices_en : q.choices;
 }
-$("langToggle").onclick = () => {
+function syncLangLabels() {
+  document.querySelectorAll(".lang-label").forEach(el => el.textContent = state.lang.toUpperCase());
+}
+// Works on home and mid-question: the quiz re-renders in place, keeping the
+// shuffled order and any answer already given.
+document.querySelectorAll(".lang-toggle").forEach(el => el.onclick = () => {
   state.lang = state.lang === "en" ? "ja" : "en";
   localStorage.setItem(LS_LANG_KEY, state.lang);
-  $("langLabel").textContent = state.lang.toUpperCase();
-};
-$("langLabel").textContent = state.lang.toUpperCase();
+  syncLangLabels();
+  if (!$("quizScreen").classList.contains("hidden")) renderQuestion();
+});
+syncLangLabels();
 
 // Shows a spinner + disables the button while fn() runs, so a slow GAS
 // cold-start network call never looks like a frozen page. The rAF yield
@@ -181,32 +197,35 @@ async function withLoading(btn, label, fn) {
 }
 
 // --- Access key gate ---
+// Returns the probe response (user list) on success so initLogin can reuse it
+// instead of making a second cold GAS round-trip.
 async function tryKey(key) {
   state.accessKey = key;
   const data = await apiGet(""); // probe: lists users only if key is valid
   if (data.error) {
     $("keyError").classList.remove("hidden");
     state.accessKey = null;
-    return false;
+    return null;
   }
   localStorage.setItem(LS_ACCESS_KEY, key);
-  return true;
+  return data;
 }
 $("keySubmitBtn").onclick = async () => {
   const key = $("keyInput").value.trim();
   if (!key) return;
   $("keyError").classList.add("hidden");
-  const ok = await withLoading($("keySubmitBtn"), "確認中…", () => tryKey(key));
-  if (ok) { await initLogin(); show("loginScreen"); }
+  const data = await withLoading($("keySubmitBtn"), "確認中…", () => tryKey(key));
+  if (data) { await initLogin(data); show("loginScreen"); }
 };
 
 // --- Login ---
-async function initLogin() {
-  const data = await apiGet(""); // just to list users
+async function initLogin(data) {
+  data = data || await apiGet(""); // just to list users
+  const users = [...new Set(data.users)];
   const sel = $("userSelect");
-  sel.innerHTML = data.users.map(u => `<option value="${u}">${u}</option>`).join("") || `<option disabled>登録済みユーザーなし</option>`;
+  sel.innerHTML = users.map(u => `<option value="${u}">${u}</option>`).join("") || `<option disabled>登録済みユーザーなし</option>`;
   const saved = localStorage.getItem(LS_USER_KEY);
-  if (saved && data.users.includes(saved)) sel.value = saved;
+  if (saved && users.includes(saved)) sel.value = saved;
 }
 $("loginBtn").onclick = () => withLoading($("loginBtn"), "読み込み中…", () => login($("userSelect").value));
 $("newUserBtn").onclick = () => {
@@ -256,12 +275,12 @@ function startQuiz() {
   renderQuestion();
 }
 
-// pre-shuffle choice order per question so the correct answer isn't always index 0
+// Pre-shuffle choice ORDER (indices, not text) per question so the language
+// can be switched mid-question without reshuffling.
 function shuffleQuiz_(questions) {
   return questions.map(q => {
     const order = shuffle_([0,1,2,3]);
-    const choices = qChoices(q);
-    return { ...q, shuffledChoices: order.map(i => choices[i]), shuffledCorrectIdx: order.indexOf(q.correct_idx) };
+    return { ...q, order, shuffledCorrectIdx: order.indexOf(Number(q.correct_idx)) };
   });
 }
 
@@ -271,34 +290,45 @@ function renderQuestion() {
   $("qTotal").textContent = state.roundQueue.length;
   $("qProgressFill").style.width = Math.round((state.qDoneInRound / state.roundQueue.length) * 100) + "%";
   $("reviewBadge").classList.toggle("hidden", state.roundIdx === 0);
-  $("qProgram").textContent = q.program;
+  $("qProgram").textContent = CAT_LABEL[q.program] || q.program;
+  $("qProgram").className = "cat cat-" + q.program;
   $("qText").textContent = qText(q, "question");
-  $("feedbackBox").classList.add("hidden");
-  $("nextBtn").classList.add("hidden");
+  const choices = qChoices(q);
   const box = $("choicesBox");
   box.innerHTML = "";
-  q.shuffledChoices.forEach((choice, i) => {
+  q.order.forEach((orig, i) => {
     const btn = document.createElement("button");
     btn.className = "choice";
-    btn.textContent = choice;
+    btn.textContent = choices[orig];
     btn.onclick = () => answer(i);
     box.appendChild(btn);
   });
+  if (q.selectedIdx == null) {
+    $("feedbackBox").classList.add("hidden");
+    $("nextBtn").classList.add("hidden");
+  } else {
+    showFeedback(q);
+  }
 }
 
 function answer(selectedIdx) {
   const q = state.roundQueue[state.qDoneInRound];
+  if (q.selectedIdx != null) return;
+  q.selectedIdx = selectedIdx;
   const correct = selectedIdx === q.shuffledCorrectIdx;
   if (correct && state.roundIdx === 0) state.correctCount++; // score = first-attempt accuracy
   state.answers.push({ qid: q.id, correct });
   if (!correct) state.missed.push(q);
+  showFeedback(q);
+}
 
+function showFeedback(q) {
+  const correct = q.selectedIdx === q.shuffledCorrectIdx;
   [...document.querySelectorAll(".choice")].forEach((btn, i) => {
     btn.disabled = true;
     if (i === q.shuffledCorrectIdx) btn.classList.add("correct");
-    else if (i === selectedIdx) btn.classList.add("wrong");
+    else if (i === q.selectedIdx) btn.classList.add("wrong");
   });
-
   const fb = $("feedbackBox");
   fb.innerHTML = `${correct ? "✅ 正解！" : "❌ 不正解"} ${qText(q, "explanation")}<br><a href="${q.source_url}" target="_blank" rel="noopener">📄 元の資料を見る（${q.source_page || ""}）</a>`;
   fb.classList.remove("hidden");
@@ -332,13 +362,16 @@ $("nextBtn").onclick = () => withLoading($("nextBtn"), "送信中…", async () 
 (async function boot() {
   const savedKey = localStorage.getItem(LS_ACCESS_KEY);
   const savedUser = localStorage.getItem(LS_USER_KEY);
-  if (savedKey && await tryKey(savedKey)) {
-    await initLogin();
-    if (savedUser) { state.user = savedUser; await goHome(); }
-    else show("loginScreen");
-  } else {
-    show("keyScreen");
+  if (savedKey) {
+    const data = await tryKey(savedKey);
+    if (data) {
+      await initLogin(data);
+      if (savedUser) { state.user = savedUser; await goHome(); }
+      else show("loginScreen");
+      return;
+    }
   }
+  show("keyScreen");
 })();
 </script>
 </body>
