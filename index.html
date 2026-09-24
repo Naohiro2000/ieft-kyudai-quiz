@@ -147,6 +147,48 @@ async function apiPost(user, answers) {
   return res.json();
 }
 
+// --- Local-first data layer ---
+// Screens render from localStorage instantly; GAS is only a background sync.
+// cache: last home payload per user. outbox: finished quizzes not yet POSTed,
+// so answers survive closing the tab mid-sync (flushed on next boot).
+const LS_CACHE = "ieft_quiz_cache", LS_OUTBOX = "ieft_quiz_outbox";
+const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const lsSet = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const cacheFor = (user) => lsGet(LS_CACHE, {})[user];
+function saveCache(user, data) {
+  const all = lsGet(LS_CACHE, {});
+  all[user] = { questions: data.questions, user: data.user };
+  all.__users = data.users || all.__users;
+  lsSet(LS_CACHE, all);
+}
+const todayJST = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }); // yyyy-mm-dd
+// Same rule as GAS nextStreak(): same day keep, yesterday +1, else 1.
+function nextStreak(last, streak, today) {
+  if (!last) return 1;
+  if (last === today) return streak;
+  const y = new Date(today + "T00:00:00Z"); y.setUTCDate(y.getUTCDate() - 1);
+  return last === y.toISOString().slice(0, 10) ? streak + 1 : 1;
+}
+let flushing = null;
+function flushOutbox() {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    let box = lsGet(LS_OUTBOX, []);
+    while (box.length) {
+      const job = box[0];
+      const data = await apiPost(job.user, job.answers);
+      if (data.error) break;
+      box = lsGet(LS_OUTBOX, []).slice(1);
+      lsSet(LS_OUTBOX, box);
+      if (!box.some(j => j.user === job.user)) { // server state is now authoritative
+        saveCache(job.user, { ...data, users: cacheFor("__users") });
+        if (job.user === state.user && !$("homeScreen").classList.contains("hidden")) renderHome();
+      }
+    }
+  })().catch(() => {}).finally(() => { flushing = null; });
+  return flushing;
+}
+
 function shuffle_(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -232,7 +274,11 @@ $("keySubmitBtn").onclick = async () => {
 // --- Login ---
 async function initLogin(data) {
   data = data || await apiGet(""); // just to list users
-  const users = [...new Set(data.users)];
+  const all = lsGet(LS_CACHE, {}); all.__users = data.users; lsSet(LS_CACHE, all);
+  renderUserList(data.users);
+}
+function renderUserList(list) {
+  const users = [...new Set(list || [])];
   const sel = $("userSelect");
   sel.innerHTML = users.map(u => `<option value="${u}">${u}</option>`).join("") || `<option disabled>登録済みユーザーなし</option>`;
   const saved = localStorage.getItem(LS_USER_KEY);
@@ -249,23 +295,47 @@ async function login(user) {
   state.user = user;
   await goHome();
 }
-$("switchUserBtn").onclick = () => { localStorage.removeItem(LS_USER_KEY); initLogin(); show("loginScreen"); };
+$("switchUserBtn").onclick = () => {
+  localStorage.removeItem(LS_USER_KEY);
+  renderUserList(cacheFor("__users")); // instant from cache, refresh behind it
+  show("loginScreen");
+  initLogin().catch(() => {});
+};
 
 // --- Home ---
+// Cached user -> paint immediately, revalidate in background. Unknown user
+// (first login) -> must wait for GAS once.
 async function goHome() {
+  if (cacheFor(state.user)) {
+    renderHome();
+    refreshHome();
+  } else {
+    await refreshHome();
+  }
+}
+async function refreshHome() {
+  await flushOutbox(); // never let a stale GET overwrite answers still in flight
+  if (lsGet(LS_OUTBOX, []).some(j => j.user === state.user)) return;
   const data = await apiGet(state.user);
-  state.questions = data.questions;
-  state.streak = data.user.streak;
+  if (data.error) return;
+  saveCache(state.user, data);
+  if (!$("quizScreen").classList.contains("hidden")) return; // don't yank the quiz
+  renderHome();
+}
+function renderHome() {
+  const c = cacheFor(state.user);
+  state.questions = c.questions;
+  state.streak = c.user.streak;
   $("homeUserName").textContent = state.user + " さん";
   $("streakNum").textContent = state.streak;
-  $("dueCount").textContent = data.questions.length;
-  $("totalSeen").textContent = data.user.total_seen;
-  $("startBtn").disabled = data.questions.length === 0;
-  $("startBtn").textContent = data.questions.length === 0 ? "本日分は学習済みです🎉" : "クイズをはじめる";
+  $("dueCount").textContent = c.questions.length;
+  $("totalSeen").textContent = c.user.total_seen;
+  $("startBtn").disabled = c.questions.length === 0;
+  $("startBtn").textContent = c.questions.length === 0 ? "本日分は学習済みです🎉" : "クイズをはじめる";
   show("homeScreen");
 }
 $("startBtn").onclick = () => withLoading($("startBtn"), "読み込み中…", startQuiz);
-$("backHomeBtn").onclick = goHome;
+$("backHomeBtn").onclick = renderHome;
 
 // --- Quiz (all client-side: no network per-question, batch POST at the end) ---
 // Round model: state.roundQueue is the list of questions still to answer in
@@ -361,18 +431,38 @@ $("nextBtn").onclick = () => withLoading($("nextBtn"), "送信中…", async () 
     renderQuestion();
     return;
   }
-  await apiPost(state.user, state.answers);
-  const data = await apiGet(state.user); // refresh streak after batch update
+  // Finish: update the local cache optimistically (answered ids leave today's
+  // due list, streak advances) and show the summary now; POST syncs behind.
+  const answered = new Set(state.answers.map(a => a.qid));
+  const c = cacheFor(state.user);
+  const today = todayJST();
+  c.questions = c.questions.filter(q => !answered.has(q.id));
+  c.user.streak = nextStreak(c.user.last_active_date, Number(c.user.streak) || 0, today);
+  c.user.last_active_date = today;
+  c.user.total_seen = Number(c.user.total_seen || 0) + [...answered].filter(id => !state.questions.find(q => q.id === id)?.box).length;
+  saveCache(state.user, c);
+  lsSet(LS_OUTBOX, [...lsGet(LS_OUTBOX, []), { user: state.user, answers: state.answers }]);
+  flushOutbox();
   $("sumCorrect").textContent = state.correctCount;
   $("sumTotal").textContent = state.totalInFirstRound;
-  $("sumStreak").textContent = data.user.streak;
+  $("sumStreak").textContent = c.user.streak;
   show("summaryScreen");
 });
 
 // --- Boot ---
+// Returning user with cache: home paints with zero network; key check and
+// refresh happen behind it. Otherwise ping GAS right away so its cold start
+// overlaps with the user typing the passphrase.
 (async function boot() {
   const savedKey = localStorage.getItem(LS_ACCESS_KEY);
   const savedUser = localStorage.getItem(LS_USER_KEY);
+  if (savedKey && savedUser && cacheFor(savedUser)) {
+    state.accessKey = savedKey;
+    state.user = savedUser;
+    renderHome();
+    refreshHome().catch(() => {});
+    return;
+  }
   if (savedKey) {
     const data = await tryKey(savedKey);
     if (data) {
@@ -382,6 +472,7 @@ $("nextBtn").onclick = () => withLoading($("nextBtn"), "送信中…", async () 
       return;
     }
   }
+  fetch(API_URL + "?key=").catch(() => {}); // warm-up only
   show("keyScreen");
 })();
 </script>

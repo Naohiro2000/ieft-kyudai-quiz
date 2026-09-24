@@ -108,6 +108,23 @@ function testTierMix() {
   console.log("testTierMix: all checks passed");
 }
 
+// --- client-side streak (copy of nextStreak in index.html; must match GAS) ---
+function nextStreak(last, streak, today) {
+  if (!last) return 1;
+  if (last === today) return streak;
+  const y = new Date(today + "T00:00:00Z"); y.setUTCDate(y.getUTCDate() - 1);
+  return last === y.toISOString().slice(0, 10) ? streak + 1 : 1;
+}
+function testStreak() {
+  assert(nextStreak("", 0, "2026-10-01") === 1, "first ever -> 1");
+  assert(nextStreak("2026-10-01", 3, "2026-10-01") === 3, "same day keeps");
+  assert(nextStreak("2026-09-30", 3, "2026-10-01") === 4, "yesterday across month boundary +1");
+  assert(nextStreak("2026-12-31", 5, "2027-01-01") === 6, "across year boundary +1");
+  assert(nextStreak("2026-09-28", 3, "2026-10-01") === 1, "gap resets");
+  console.log("testStreak: all checks passed");
+}
+
 demo();
 testRoundLogic();
 testTierMix();
+testStreak();
