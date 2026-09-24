@@ -15,6 +15,9 @@
   button { background:var(--accent); color:#fff; border:none; font-weight:600; cursor:pointer; margin-top:10px; }
   button.secondary { background:#eee; color:#333; }
   button:active { transform:scale(0.98); }
+  button:disabled { opacity:0.65; cursor:default; }
+  .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.5); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-3px; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   .streak { text-align:center; font-size:2.2rem; font-weight:700; margin:10px 0; }
   .streak span { font-size:1rem; color:var(--muted); display:block; font-weight:400; }
   .stat-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #eee; }
@@ -131,6 +134,20 @@ function shuffle_(arr) {
   return a;
 }
 
+// Shows a spinner + disables the button while fn() runs, so a slow GAS
+// cold-start network call never looks like a frozen page.
+async function withLoading(btn, label, fn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>${label}`;
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
 // --- Access key gate ---
 async function tryKey(key) {
   state.accessKey = key;
@@ -147,12 +164,7 @@ $("keySubmitBtn").onclick = async () => {
   const key = $("keyInput").value.trim();
   if (!key) return;
   $("keyError").classList.add("hidden");
-  const btn = $("keySubmitBtn");
-  btn.disabled = true;
-  btn.textContent = "確認中…";
-  const ok = await tryKey(key);
-  btn.disabled = false;
-  btn.textContent = "次へ";
+  const ok = await withLoading($("keySubmitBtn"), "確認中…", () => tryKey(key));
   if (ok) { await initLogin(); show("loginScreen"); }
 };
 
@@ -164,10 +176,10 @@ async function initLogin() {
   const saved = localStorage.getItem(LS_USER_KEY);
   if (saved && data.users.includes(saved)) sel.value = saved;
 }
-$("loginBtn").onclick = () => login($("userSelect").value);
+$("loginBtn").onclick = () => withLoading($("loginBtn"), "読み込み中…", () => login($("userSelect").value));
 $("newUserBtn").onclick = () => {
   const name = $("newUserInput").value.trim();
-  if (name) login(name);
+  if (name) withLoading($("newUserBtn"), "読み込み中…", () => login(name));
 };
 function login(user) {
   if (!user) return;
@@ -190,7 +202,7 @@ async function goHome() {
   $("startBtn").textContent = data.questions.length === 0 ? "本日分は学習済みです🎉" : "クイズをはじめる";
   show("homeScreen");
 }
-$("startBtn").onclick = startQuiz;
+$("startBtn").onclick = () => withLoading($("startBtn"), "読み込み中…", startQuiz);
 $("backHomeBtn").onclick = goHome;
 
 // --- Quiz (all client-side: no network per-question, batch POST at the end) ---
@@ -245,7 +257,7 @@ function answer(selectedIdx) {
   $("nextBtn").classList.remove("hidden");
 }
 
-$("nextBtn").onclick = async () => {
+$("nextBtn").onclick = () => withLoading($("nextBtn"), "送信中…", async () => {
   state.idx++;
   if (state.idx >= state.quiz.length) {
     await apiPost(state.user, state.answers);
@@ -257,7 +269,7 @@ $("nextBtn").onclick = async () => {
   } else {
     renderQuestion();
   }
-};
+});
 
 // --- Boot ---
 (async function boot() {
