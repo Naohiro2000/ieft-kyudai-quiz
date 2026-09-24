@@ -164,11 +164,14 @@ $("langToggle").onclick = () => {
 $("langLabel").textContent = state.lang.toUpperCase();
 
 // Shows a spinner + disables the button while fn() runs, so a slow GAS
-// cold-start network call never looks like a frozen page.
+// cold-start network call never looks like a frozen page. The rAF yield
+// matters even for synchronous fn()s: without it the spinner never paints
+// because the browser can't repaint until this sync call stack unwinds.
 async function withLoading(btn, label, fn) {
   const original = btn.textContent;
   btn.disabled = true;
   btn.innerHTML = `<span class="spinner"></span>${label}`;
+  await new Promise(requestAnimationFrame);
   try {
     return await fn();
   } finally {
