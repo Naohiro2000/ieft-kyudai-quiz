@@ -42,6 +42,30 @@
   .cat-COMMON { background:#6b7280; } .cat-IEFT { background:#dc2626; } .cat-TR { background:#e30a17; }
   .quiz-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
   .lang-toggle { cursor:pointer; color:var(--muted); font-size:0.85rem; user-select:none; }
+  /* --- fun layer: CSS-only animations, respects reduced motion --- */
+  .screen > div:not(.hidden) { animation:fadeUp .25s ease; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } }
+  .choice.correct { animation:pop .35s ease; }
+  .choice.wrong { animation:shake .35s ease; }
+  @keyframes pop { 50% { transform:scale(1.04); } }
+  @keyframes shake { 20%,60% { transform:translateX(-6px); } 40%,80% { transform:translateX(6px); } }
+  .toast { position:fixed; left:50%; top:22%; transform:translateX(-50%); font-size:1.6rem; font-weight:800; color:var(--accent);
+    text-shadow:0 2px 0 #fff; pointer-events:none; animation:floatUp 1s ease forwards; z-index:10; white-space:nowrap; }
+  @keyframes floatUp { from { opacity:0; transform:translate(-50%,10px) scale(.8); } 20% { opacity:1; transform:translate(-50%,0) scale(1.1); } to { opacity:0; transform:translate(-50%,-40px); } }
+  .confetti { position:fixed; top:-20px; font-size:1.4rem; pointer-events:none; animation:fall linear forwards; z-index:10; }
+  @keyframes fall { to { transform:translateY(110vh) rotate(720deg); } }
+  .big-num { font-size:3rem; font-weight:800; text-align:center; color:var(--accent); }
+  .lb-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #eee; }
+  .lb-row:last-child { border-bottom:none; }
+  .lb-row.me { background:#fff4ee; margin:0 -10px; padding:8px 10px; border-radius:10px; }
+  .lb-rank { width:28px; text-align:center; font-weight:700; }
+  .lb-bar { flex:1; }
+  .lb-name { font-size:0.9rem; display:flex; justify-content:space-between; }
+  .lb-track { height:6px; background:#eee; border-radius:4px; overflow:hidden; margin-top:4px; }
+  .lb-fill { height:100%; background:var(--accent); border-radius:4px; transform-origin:left; animation:grow .6s ease; }
+  @keyframes grow { from { transform:scaleX(0); } }
+  button.trivia { background:#e30a17; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; } }
 </style>
 </head>
 <body>
@@ -89,6 +113,11 @@
       <div class="stat-row"><span>これまでの累計学習数</span><b id="totalSeen">-</b></div>
     </div>
     <button id="startBtn">クイズをはじめる</button>
+    <button id="triviaBtn" class="trivia hidden">🇹🇷 雑学だけモード</button>
+    <div class="card" style="margin-top:16px;">
+      <div style="font-weight:700;margin-bottom:6px;">🏆 ランキング <small style="color:#888;font-weight:400;">習得ポイント</small></div>
+      <div id="leaderboard"></div>
+    </div>
   </div>
 
   <!-- Quiz screen -->
@@ -110,10 +139,13 @@
 
   <!-- Summary screen -->
   <div id="summaryScreen" class="hidden">
-    <h1>🎉 おつかれさま！</h1>
+    <h1 id="sumTitle">🎉 おつかれさま！</h1>
     <div class="card">
+      <div class="big-num">+<span id="sumPoints">0</span></div>
+      <div style="text-align:center;color:#888;margin-bottom:10px;">習得ポイント <span id="sumRank"></span></div>
       <div class="stat-row"><span>今回の正答数</span><b id="sumCorrect">-</b></div>
       <div class="stat-row"><span>今回の出題数</span><b id="sumTotal">-</b></div>
+      <div class="stat-row"><span>最大コンボ</span><b id="sumCombo">-</b></div>
       <div class="streak">🔥 <span id="sumStreak">0</span><span>日連続</span></div>
     </div>
     <button id="backHomeBtn">ホームに戻る</button>
@@ -159,6 +191,7 @@ function saveCache(user, data) {
   const all = lsGet(LS_CACHE, {});
   all[user] = { questions: data.questions, user: data.user };
   all.__users = data.users || all.__users;
+  all.__lb = data.leaderboard || all.__lb;
   lsSet(LS_CACHE, all);
 }
 const todayJST = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }); // yyyy-mm-dd
@@ -332,9 +365,28 @@ function renderHome() {
   $("totalSeen").textContent = c.user.total_seen;
   $("startBtn").disabled = c.questions.length === 0;
   $("startBtn").textContent = c.questions.length === 0 ? "本日分は学習済みです🎉" : "クイズをはじめる";
+  // Basics come first: trivia-only mode unlocks once no basic question is due today.
+  const basicLeft = c.questions.some(q => (q.tier || "basic") === "basic");
+  $("triviaBtn").classList.toggle("hidden", basicLeft || !c.questions.some(q => q.tier === "trivia"));
+  renderLeaderboard();
   show("homeScreen");
 }
-$("startBtn").onclick = () => withLoading($("startBtn"), "読み込み中…", startQuiz);
+function renderLeaderboard() {
+  const lb = cacheFor("__lb") || [];
+  const top = Math.max(1, ...lb.map(r => r.score));
+  const medal = ["🥇","🥈","🥉"];
+  $("leaderboard").innerHTML = lb.map((r, i) => `
+    <div class="lb-row${r.user === state.user ? " me" : ""}">
+      <span class="lb-rank">${medal[i] || i + 1}</span>
+      <div class="lb-bar">
+        <div class="lb-name"><span>${esc(r.user)}${r.streak ? ` <small>🔥${r.streak}</small>` : ""}</span><b>${r.score}</b></div>
+        <div class="lb-track"><div class="lb-fill" style="width:${Math.round(r.score / top * 100)}%"></div></div>
+      </div>
+    </div>`).join("") || `<div class="empty">まだ誰も解いていません</div>`;
+}
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+$("startBtn").onclick = () => withLoading($("startBtn"), "読み込み中…", () => startQuiz());
+$("triviaBtn").onclick = () => startQuiz(state.questions.filter(q => q.tier === "trivia"));
 $("backHomeBtn").onclick = renderHome;
 
 // --- Quiz (all client-side: no network per-question, batch POST at the end) ---
@@ -342,12 +394,13 @@ $("backHomeBtn").onclick = renderHome;
 // the CURRENT round; state.missed collects ones answered wrong, becoming the
 // next round's queue. state.answers accumulates every (qid, correct) pair
 // across all rounds for the single batch POST at the very end.
-function startQuiz() {
-  if (state.questions.length === 0) return;
+function startQuiz(pool = state.questions) {
+  if (pool.length === 0) return;
   state.correctCount = 0;
   state.answers = [];
-  state.totalInFirstRound = Math.min(state.questions.length, QUIZ_SIZE);
-  const picked = pickRound_(state.questions, QUIZ_SIZE);
+  state.combo = 0; state.maxCombo = 0;
+  state.totalInFirstRound = Math.min(pool.length, QUIZ_SIZE);
+  const picked = pickRound_(pool, QUIZ_SIZE);
   state.roundQueue = shuffleQuiz_(picked);
   state.missed = [];
   state.roundIdx = 0; // 0 = first pass, >0 = review round
@@ -400,7 +453,41 @@ function answer(selectedIdx) {
   if (correct && state.roundIdx === 0) state.correctCount++; // score = first-attempt accuracy
   state.answers.push({ qid: q.id, correct });
   if (!correct) state.missed.push(q);
+  state.combo = correct ? state.combo + 1 : 0;
+  state.maxCombo = Math.max(state.maxCombo, state.combo);
+  if (state.combo >= 3) toast(`🔥 ${state.combo} コンボ！`);
+  else if (correct) toast("👍");
   showFeedback(q);
+}
+
+// --- fun layer (DOM + CSS keyframes only, no libs) ---
+function toast(text) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+function confetti(n) {
+  const bits = ["🎉","✨","🍎","🇹🇷","⭐","🎊"];
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement("div");
+    el.className = "confetti";
+    el.textContent = bits[i % bits.length];
+    el.style.left = Math.random() * 100 + "vw";
+    el.style.animationDuration = 1.5 + Math.random() * 1.5 + "s";
+    el.style.animationDelay = Math.random() * 0.4 + "s";
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+}
+// Mastery points gained this session = change in sum of Leitner boxes.
+// Mirrors GAS: correct -> box+1 (max 5), wrong -> box 1, applied in answer order.
+function pointsDelta(startBoxes, answers) {
+  const box = { ...startBoxes };
+  const before = Object.values(box).reduce((a, b) => a + b, 0);
+  answers.forEach(a => { box[a.qid] = a.correct ? Math.min((box[a.qid] || 0) + 1, 5) : 1; });
+  return Object.values(box).reduce((a, b) => a + b, 0) - before;
 }
 
 function showFeedback(q) {
@@ -443,10 +530,28 @@ $("nextBtn").onclick = () => withLoading($("nextBtn"), "送信中…", async () 
   saveCache(state.user, c);
   lsSet(LS_OUTBOX, [...lsGet(LS_OUTBOX, []), { user: state.user, answers: state.answers }]);
   flushOutbox();
+  // Optimistic leaderboard: bump my score locally; server copy replaces it after sync.
+  const startBoxes = {};
+  state.questions.filter(q => answered.has(q.id)).forEach(q => startBoxes[q.id] = Number(q.box) || 0);
+  const gained = pointsDelta(startBoxes, state.answers);
+  const all = lsGet(LS_CACHE, {});
+  const lb = all.__lb || [];
+  const rankBefore = lb.findIndex(r => r.user === state.user);
+  const me = lb.find(r => r.user === state.user) || (lb.push({ user: state.user, score: 0, streak: 0 }), lb[lb.length - 1]);
+  me.score += gained; me.streak = c.user.streak;
+  lb.sort((a, b) => b.score - a.score);
+  all.__lb = lb; lsSet(LS_CACHE, all);
+  const rankNow = lb.indexOf(me);
+  $("sumPoints").textContent = gained;
+  $("sumRank").textContent = `・${rankNow + 1}位` + (rankBefore > rankNow ? " ⬆️ランクアップ！" : "");
+  $("sumCombo").textContent = state.maxCombo;
+  const perfect = state.correctCount === state.totalInFirstRound;
+  $("sumTitle").textContent = perfect ? "🏆 パーフェクト！" : "🎉 おつかれさま！";
   $("sumCorrect").textContent = state.correctCount;
   $("sumTotal").textContent = state.totalInFirstRound;
   $("sumStreak").textContent = c.user.streak;
   show("summaryScreen");
+  confetti(perfect || rankBefore > rankNow ? 40 : 15);
 });
 
 // --- Boot ---

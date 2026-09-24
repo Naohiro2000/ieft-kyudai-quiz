@@ -124,7 +124,23 @@ function testStreak() {
   console.log("testStreak: all checks passed");
 }
 
+// --- mastery points (copy of pointsDelta in index.html; must mirror GAS Leitner) ---
+function pointsDelta(startBoxes, answers) {
+  const box = { ...startBoxes };
+  const before = Object.values(box).reduce((a, b) => a + b, 0);
+  answers.forEach(a => { box[a.qid] = a.correct ? Math.min((box[a.qid] || 0) + 1, 5) : 1; });
+  return Object.values(box).reduce((a, b) => a + b, 0) - before;
+}
+function testPoints() {
+  assert(pointsDelta({ a: 0, b: 0 }, [{ qid: "a", correct: true }, { qid: "b", correct: true }]) === 2, "two new correct = +2");
+  assert(pointsDelta({ a: 5 }, [{ qid: "a", correct: true }]) === 0, "box5 capped");
+  assert(pointsDelta({ a: 4 }, [{ qid: "a", correct: false }]) === -3, "wrong drops to box1");
+  assert(pointsDelta({ a: 0 }, [{ qid: "a", correct: false }, { qid: "a", correct: true }]) === 2, "miss then review = box2");
+  console.log("testPoints: all checks passed");
+}
+
 demo();
 testRoundLogic();
 testTierMix();
 testStreak();
+testPoints();
