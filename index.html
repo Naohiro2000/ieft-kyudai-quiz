@@ -39,7 +39,7 @@
   .empty { text-align:center; color:var(--muted); padding:30px 0; }
   .cat { display:inline-block; color:#fff; border-radius:6px; padding:2px 8px; font-size:0.75rem; font-weight:700; letter-spacing:.02em; }
   .cat-ENG { background:#2563eb; } .cat-ISI { background:#7c3aed; } .cat-BIO { background:#16a34a; }
-  .cat-COMMON { background:#6b7280; } .cat-IEFT { background:#dc2626; }
+  .cat-COMMON { background:#6b7280; } .cat-IEFT { background:#dc2626; } .cat-TR { background:#e30a17; }
   .quiz-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
   .lang-toggle { cursor:pointer; color:var(--muted); font-size:0.85rem; user-select:none; }
 </style>
@@ -156,7 +156,18 @@ function shuffle_(arr) {
   return a;
 }
 
-const CAT_LABEL = { ENG:"Engineering", ISI:"ISI", BIO:"Bio", COMMON:"Common", IEFT:"IEFT" };
+const CAT_LABEL = { ENG:"Engineering", ISI:"ISI", BIO:"Bio", COMMON:"Common", IEFT:"IEFT", TR:"🇹🇷 Türkiye" };
+// Round mix basic:adv:trivia = 7:1:2. A tier that runs short is backfilled
+// from the rest (basic first), so a round is always full while questions last.
+const TIER_MIX = { basic:7, adv:1, trivia:2 };
+function pickRound_(questions, size) {
+  const pools = {};
+  shuffle_(questions).forEach(q => (pools[q.tier || "basic"] ||= []).push(q));
+  const picked = [];
+  for (const [tier, n] of Object.entries(TIER_MIX)) picked.push(...(pools[tier] || []).splice(0, n));
+  for (const tier of Object.keys(TIER_MIX)) picked.push(...(pools[tier] || []).splice(0, size - picked.length));
+  return shuffle_(picked.slice(0, size));
+}
 
 // EN/JA text picker: falls back to JA if an EN field is missing.
 function qText(q, field) {
@@ -266,7 +277,7 @@ function startQuiz() {
   state.correctCount = 0;
   state.answers = [];
   state.totalInFirstRound = Math.min(state.questions.length, QUIZ_SIZE);
-  const picked = shuffle_(state.questions).slice(0, QUIZ_SIZE);
+  const picked = pickRound_(state.questions, QUIZ_SIZE);
   state.roundQueue = shuffleQuiz_(picked);
   state.missed = [];
   state.roundIdx = 0; // 0 = first pass, >0 = review round

@@ -85,5 +85,29 @@ function testRoundLogic() {
   console.log("testRoundLogic: all checks passed");
 }
 
+// --- 7:1:2 tier mix (copy of pickRound_ in index.html) ---
+const TIER_MIX = { basic:7, adv:1, trivia:2 };
+function pickRound_(questions, size) {
+  const pools = {};
+  questions.forEach(q => (pools[q.tier || "basic"] ||= []).push(q));
+  const picked = [];
+  for (const [tier, n] of Object.entries(TIER_MIX)) picked.push(...(pools[tier] || []).splice(0, n));
+  for (const tier of Object.keys(TIER_MIX)) picked.push(...(pools[tier] || []).splice(0, size - picked.length));
+  return picked.slice(0, size);
+}
+function testTierMix() {
+  const mk = (tier, n) => Array.from({ length: n }, (_, i) => ({ id: tier + i, tier }));
+  const count = (qs, t) => qs.filter(q => q.tier === t).length;
+  let r = pickRound_([...mk("basic", 40), ...mk("adv", 20), ...mk("trivia", 15)], 10);
+  assert(r.length === 10 && count(r, "basic") === 7 && count(r, "adv") === 1 && count(r, "trivia") === 2, "full pools -> exactly 7:1:2");
+  r = pickRound_([...mk("basic", 3), ...mk("adv", 20), ...mk("trivia", 15)], 10);
+  assert(r.length === 10 && count(r, "basic") === 3, "short basic pool is backfilled so the round stays 10");
+  r = pickRound_([...mk("basic", 2), ...mk("trivia", 1)], 10);
+  assert(r.length === 3, "fewer due than 10 -> use all");
+  assert(new Set(pickRound_(mk("basic", 30), 10).map(q => q.id)).size === 10, "no duplicates");
+  console.log("testTierMix: all checks passed");
+}
+
 demo();
 testRoundLogic();
+testTierMix();
