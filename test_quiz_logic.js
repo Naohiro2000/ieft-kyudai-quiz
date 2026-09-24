@@ -139,7 +139,23 @@ function testPoints() {
   console.log("testPoints: all checks passed");
 }
 
+// --- review round must start unanswered (copy of shuffleQuiz_ in index.html) ---
+function shuffleQuiz_(questions) {
+  return questions.map(q => {
+    const order = shuffle_([0, 1, 2, 3], Math.random);
+    return { ...q, order, shuffledCorrectIdx: order.indexOf(Number(q.correct_idx)), selectedIdx: null };
+  });
+}
+function testReviewReset() {
+  const missed = shuffleQuiz_([{ id: "q1", correct_idx: 0 }]);
+  missed[0].selectedIdx = 2; // answered wrong in round 1
+  const review = shuffleQuiz_(missed);
+  assert(review[0].selectedIdx === null, "review round question must not carry the previous answer");
+  console.log("testReviewReset: all checks passed");
+}
+
 demo();
+testReviewReset();
 testRoundLogic();
 testTierMix();
 testStreak();
