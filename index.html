@@ -147,7 +147,13 @@ $("keySubmitBtn").onclick = async () => {
   const key = $("keyInput").value.trim();
   if (!key) return;
   $("keyError").classList.add("hidden");
-  if (await tryKey(key)) { await initLogin(); show("loginScreen"); }
+  const btn = $("keySubmitBtn");
+  btn.disabled = true;
+  btn.textContent = "確認中…";
+  const ok = await tryKey(key);
+  btn.disabled = false;
+  btn.textContent = "次へ";
+  if (ok) { await initLogin(); show("loginScreen"); }
 };
 
 // --- Login ---
