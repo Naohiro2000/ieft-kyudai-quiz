@@ -17,7 +17,7 @@
   button.secondary { background:#fff; color:var(--accent); border:2px solid var(--accent); }
   button:active { transform:scale(0.98); }
   button:disabled { opacity:0.65; cursor:default; }
-  .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.5); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-3px; margin-right:6px; }
+  .spinner { display:inline-block; width:16px; height:16px; border:2px solid color-mix(in srgb, currentColor 35%, transparent); border-top-color:currentColor; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-3px; margin-right:6px; }
   @keyframes spin { to { transform:rotate(360deg); } }
   .streak { text-align:center; font-size:2.2rem; font-weight:700; margin:10px 0; }
   .streak span { font-size:1rem; color:var(--muted); display:block; font-weight:400; }
