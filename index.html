@@ -36,8 +36,19 @@
 <body>
 <div class="screen">
 
+  <!-- Access key screen -->
+  <div id="keyScreen">
+    <h1>🎓 IEFT クイズ<br><small style="font-size:0.9rem;color:#888">九大プログラム学習</small></h1>
+    <div class="card">
+      <label style="font-weight:600;">合言葉を入力</label>
+      <input id="keyInput" type="password" placeholder="担当者に確認してください" style="margin-top:8px;">
+      <button id="keySubmitBtn">次へ</button>
+      <div id="keyError" class="hidden" style="color:#e0453c;margin-top:10px;font-size:0.9rem;">合言葉が違います</div>
+    </div>
+  </div>
+
   <!-- Login screen -->
-  <div id="loginScreen">
+  <div id="loginScreen" class="hidden">
     <h1>🎓 IEFT クイズ<br><small style="font-size:0.9rem;color:#888">九大プログラム学習</small></h1>
     <div class="card">
       <label style="font-weight:600;">担当者名を選択</label>
@@ -92,21 +103,23 @@
 // ponytail: API_URL is the one GAS deployment; update after redeploy.
 const API_URL = "https://script.google.com/macros/s/AKfycbyCojSmYOdUT9ZQjgRe3V8aotPUMb-tXvCbUMd1FSt1LO7f9EatP2RLJuCIl1ARW6rvtg/exec";
 const LS_USER_KEY = "ieft_quiz_user";
+const LS_ACCESS_KEY = "ieft_quiz_key";
 
-let state = { user:null, questions:[], idx:0, correctCount:0, answers:[], streak:0 };
+let state = { user:null, accessKey:null, questions:[], idx:0, correctCount:0, answers:[], streak:0 };
 
 const $ = (id) => document.getElementById(id);
 function show(id) {
-  ["loginScreen","homeScreen","quizScreen","summaryScreen"].forEach(s => $(s).classList.toggle("hidden", s !== id));
+  ["keyScreen","loginScreen","homeScreen","quizScreen","summaryScreen"].forEach(s => $(s).classList.toggle("hidden", s !== id));
 }
 
 async function apiGet(user) {
-  const res = await fetch(`${API_URL}?user=${encodeURIComponent(user)}`);
+  const res = await fetch(`${API_URL}?user=${encodeURIComponent(user)}&key=${encodeURIComponent(state.accessKey)}`);
   return res.json();
 }
 async function apiPost(user, answers) {
   // text/plain avoids a CORS preflight OPTIONS request that GAS can't answer.
-  await fetch(API_URL, { method:"POST", headers:{"Content-Type":"text/plain"}, body: JSON.stringify({ user, answers }) });
+  const res = await fetch(API_URL, { method:"POST", headers:{"Content-Type":"text/plain"}, body: JSON.stringify({ key: state.accessKey, user, answers }) });
+  return res.json();
 }
 
 function shuffle_(arr) {
@@ -117,6 +130,25 @@ function shuffle_(arr) {
   }
   return a;
 }
+
+// --- Access key gate ---
+async function tryKey(key) {
+  state.accessKey = key;
+  const data = await apiGet(""); // probe: lists users only if key is valid
+  if (data.error) {
+    $("keyError").classList.remove("hidden");
+    state.accessKey = null;
+    return false;
+  }
+  localStorage.setItem(LS_ACCESS_KEY, key);
+  return true;
+}
+$("keySubmitBtn").onclick = async () => {
+  const key = $("keyInput").value.trim();
+  if (!key) return;
+  $("keyError").classList.add("hidden");
+  if (await tryKey(key)) { await initLogin(); show("loginScreen"); }
+};
 
 // --- Login ---
 async function initLogin() {
@@ -223,10 +255,15 @@ $("nextBtn").onclick = async () => {
 
 // --- Boot ---
 (async function boot() {
-  const saved = localStorage.getItem(LS_USER_KEY);
-  await initLogin();
-  if (saved) { state.user = saved; goHome(); }
-  else show("loginScreen");
+  const savedKey = localStorage.getItem(LS_ACCESS_KEY);
+  const savedUser = localStorage.getItem(LS_USER_KEY);
+  if (savedKey && await tryKey(savedKey)) {
+    await initLogin();
+    if (savedUser) { state.user = savedUser; goHome(); }
+    else show("loginScreen");
+  } else {
+    show("keyScreen");
+  }
 })();
 </script>
 </body>
