@@ -213,11 +213,11 @@ $("newUserBtn").onclick = () => {
   const name = $("newUserInput").value.trim();
   if (name) withLoading($("newUserBtn"), "読み込み中…", () => login(name));
 };
-function login(user) {
+async function login(user) {
   if (!user) return;
   localStorage.setItem(LS_USER_KEY, user);
   state.user = user;
-  goHome();
+  await goHome();
 }
 $("switchUserBtn").onclick = () => { localStorage.removeItem(LS_USER_KEY); initLogin(); show("loginScreen"); };
 
@@ -334,7 +334,7 @@ $("nextBtn").onclick = () => withLoading($("nextBtn"), "送信中…", async () 
   const savedUser = localStorage.getItem(LS_USER_KEY);
   if (savedKey && await tryKey(savedKey)) {
     await initLogin();
-    if (savedUser) { state.user = savedUser; goHome(); }
+    if (savedUser) { state.user = savedUser; await goHome(); }
     else show("loginScreen");
   } else {
     show("keyScreen");
