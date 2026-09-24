@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>IEFT クイズ - 九大プログラム学習</title>
+<style>
+  :root { --accent:#ff6b35; --bg:#fafafa; --card:#fff; --text:#222; --muted:#888; --good:#2e9e4f; --bad:#e0453c; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif; background:var(--bg); color:var(--text); }
+  .screen { max-width:480px; margin:0 auto; min-height:100vh; padding:16px; display:flex; flex-direction:column; }
+  h1 { font-size:1.3rem; margin:8px 0 20px; text-align:center; }
+  .card { background:var(--card); border-radius:16px; padding:20px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:16px; }
+  select, button, input { font-size:1rem; padding:14px; border-radius:12px; border:1px solid #ddd; width:100%; }
+  button { background:var(--accent); color:#fff; border:none; font-weight:600; cursor:pointer; margin-top:10px; }
+  button.secondary { background:#eee; color:#333; }
+  button:active { transform:scale(0.98); }
+  .streak { text-align:center; font-size:2.2rem; font-weight:700; margin:10px 0; }
+  .streak span { font-size:1rem; color:var(--muted); display:block; font-weight:400; }
+  .stat-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #eee; }
+  .stat-row:last-child { border-bottom:none; }
+  .qprogress { text-align:center; color:var(--muted); margin-bottom:8px; }
+  .question { font-size:1.1rem; font-weight:600; margin-bottom:18px; line-height:1.5; }
+  .choice { display:block; width:100%; text-align:left; background:#fff; border:2px solid #ddd; color:var(--text); margin-bottom:10px; padding:14px; border-radius:12px; font-weight:500; }
+  .choice.correct { border-color:var(--good); background:#eafbea; }
+  .choice.wrong { border-color:var(--bad); background:#fdeceb; }
+  .choice[disabled] { opacity:0.85; }
+  .feedback { margin-top:14px; padding:14px; border-radius:12px; background:#f5f5f5; font-size:0.92rem; line-height:1.5; }
+  .feedback a { color:var(--accent); font-weight:600; text-decoration:none; }
+  .hidden { display:none !important; }
+  .top-nav { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; color:var(--muted); font-size:0.85rem; }
+  .badge { background:var(--accent); color:#fff; border-radius:20px; padding:2px 10px; font-size:0.8rem; }
+  .empty { text-align:center; color:var(--muted); padding:30px 0; }
+</style>
+</head>
+<body>
+<div class="screen">
+
+  <!-- Login screen -->
+  <div id="loginScreen">
+    <h1>🎓 IEFT クイズ<br><small style="font-size:0.9rem;color:#888">九大プログラム学習</small></h1>
+    <div class="card">
+      <label style="font-weight:600;">担当者名を選択</label>
+      <select id="userSelect" style="margin-top:8px;"></select>
+      <button id="loginBtn">はじめる</button>
+      <hr style="margin:18px 0;border:none;border-top:1px solid #eee;">
+      <label style="font-weight:600;">新規登録</label>
+      <input id="newUserInput" placeholder="名前を入力" style="margin-top:8px;">
+      <button class="secondary" id="newUserBtn">新規で登録してはじめる</button>
+    </div>
+  </div>
+
+  <!-- Home screen -->
+  <div id="homeScreen" class="hidden">
+    <div class="top-nav"><span id="homeUserName"></span><span id="switchUserBtn" style="cursor:pointer;">切り替え</span></div>
+    <div class="card">
+      <div class="streak">🔥 <span id="streakNum">0</span><span>日連続</span></div>
+    </div>
+    <div class="card">
+      <div class="stat-row"><span>今日学習可能な問題</span><b id="dueCount">-</b></div>
+      <div class="stat-row"><span>これまでの累計学習数</span><b id="totalSeen">-</b></div>
+    </div>
+    <button id="startBtn">クイズをはじめる</button>
+  </div>
+
+  <!-- Quiz screen -->
+  <div id="quizScreen" class="hidden">
+    <div class="qprogress"><span id="qIndex">1</span> / <span id="qTotal">1</span> 問</div>
+    <div class="card">
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px;" id="qProgram"></div>
+      <div class="question" id="qText"></div>
+      <div id="choicesBox"></div>
+      <div id="feedbackBox" class="feedback hidden"></div>
+      <button id="nextBtn" class="hidden">次へ</button>
+    </div>
+  </div>
+
+  <!-- Summary screen -->
+  <div id="summaryScreen" class="hidden">
+    <h1>🎉 おつかれさま！</h1>
+    <div class="card">
+      <div class="stat-row"><span>今回の正答数</span><b id="sumCorrect">-</b></div>
+      <div class="stat-row"><span>今回の出題数</span><b id="sumTotal">-</b></div>
+      <div class="streak">🔥 <span id="sumStreak">0</span><span>日連続</span></div>
+    </div>
+    <button id="backHomeBtn">ホームに戻る</button>
+  </div>
+
+</div>
+
+<script>
+// ponytail: API_URL is the one GAS deployment; update after redeploy.
+const API_URL = "https://script.google.com/macros/s/AKfycbyCojSmYOdUT9ZQjgRe3V8aotPUMb-tXvCbUMd1FSt1LO7f9EatP2RLJuCIl1ARW6rvtg/exec";
+const LS_USER_KEY = "ieft_quiz_user";
+
+let state = { user:null, questions:[], idx:0, correctCount:0, answers:[], streak:0 };
+
+const $ = (id) => document.getElementById(id);
+function show(id) {
+  ["loginScreen","homeScreen","quizScreen","summaryScreen"].forEach(s => $(s).classList.toggle("hidden", s !== id));
+}
+
+async function apiGet(user) {
+  const res = await fetch(`${API_URL}?user=${encodeURIComponent(user)}`);
+  return res.json();
+}
+async function apiPost(user, answers) {
+  // text/plain avoids a CORS preflight OPTIONS request that GAS can't answer.
+  await fetch(API_URL, { method:"POST", headers:{"Content-Type":"text/plain"}, body: JSON.stringify({ user, answers }) });
+}
+
+function shuffle_(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// --- Login ---
+async function initLogin() {
+  const data = await apiGet(""); // just to list users
+  const sel = $("userSelect");
+  sel.innerHTML = data.users.map(u => `<option value="${u}">${u}</option>`).join("") || `<option disabled>登録済みユーザーなし</option>`;
+  const saved = localStorage.getItem(LS_USER_KEY);
+  if (saved && data.users.includes(saved)) sel.value = saved;
+}
+$("loginBtn").onclick = () => login($("userSelect").value);
+$("newUserBtn").onclick = () => {
+  const name = $("newUserInput").value.trim();
+  if (name) login(name);
+};
+function login(user) {
+  if (!user) return;
+  localStorage.setItem(LS_USER_KEY, user);
+  state.user = user;
+  goHome();
+}
+$("switchUserBtn").onclick = () => { localStorage.removeItem(LS_USER_KEY); initLogin(); show("loginScreen"); };
+
+// --- Home ---
+async function goHome() {
+  const data = await apiGet(state.user);
+  state.questions = data.questions;
+  state.streak = data.user.streak;
+  $("homeUserName").textContent = state.user + " さん";
+  $("streakNum").textContent = state.streak;
+  $("dueCount").textContent = data.questions.length;
+  $("totalSeen").textContent = data.user.total_seen;
+  $("startBtn").disabled = data.questions.length === 0;
+  $("startBtn").textContent = data.questions.length === 0 ? "本日分は学習済みです🎉" : "クイズをはじめる";
+  show("homeScreen");
+}
+$("startBtn").onclick = startQuiz;
+$("backHomeBtn").onclick = goHome;
+
+// --- Quiz (all client-side: no network per-question, batch POST at the end) ---
+function startQuiz() {
+  if (state.questions.length === 0) return;
+  state.idx = 0;
+  state.correctCount = 0;
+  state.answers = [];
+  // pre-shuffle choice order per question so the correct answer isn't always index 0
+  state.quiz = state.questions.map(q => {
+    const order = shuffle_([0,1,2,3]);
+    return { ...q, shuffledChoices: order.map(i => q.choices[i]), shuffledCorrectIdx: order.indexOf(q.correct_idx) };
+  });
+  show("quizScreen");
+  renderQuestion();
+}
+
+function renderQuestion() {
+  const q = state.quiz[state.idx];
+  $("qIndex").textContent = state.idx + 1;
+  $("qTotal").textContent = state.quiz.length;
+  $("qProgram").textContent = q.program;
+  $("qText").textContent = q.question;
+  $("feedbackBox").classList.add("hidden");
+  $("nextBtn").classList.add("hidden");
+  const box = $("choicesBox");
+  box.innerHTML = "";
+  q.shuffledChoices.forEach((choice, i) => {
+    const btn = document.createElement("button");
+    btn.className = "choice";
+    btn.textContent = choice;
+    btn.onclick = () => answer(i);
+    box.appendChild(btn);
+  });
+}
+
+function answer(selectedIdx) {
+  const q = state.quiz[state.idx];
+  const correct = selectedIdx === q.shuffledCorrectIdx;
+  if (correct) state.correctCount++;
+  state.answers.push({ qid: q.id, correct });
+
+  [...document.querySelectorAll(".choice")].forEach((btn, i) => {
+    btn.disabled = true;
+    if (i === q.shuffledCorrectIdx) btn.classList.add("correct");
+    else if (i === selectedIdx) btn.classList.add("wrong");
+  });
+
+  const fb = $("feedbackBox");
+  fb.innerHTML = `${correct ? "✅ 正解！" : "❌ 不正解"} ${q.explanation}<br><a href="${q.source_url}" target="_blank" rel="noopener">📄 元の資料を見る（${q.source_page || ""}）</a>`;
+  fb.classList.remove("hidden");
+  $("nextBtn").classList.remove("hidden");
+}
+
+$("nextBtn").onclick = async () => {
+  state.idx++;
+  if (state.idx >= state.quiz.length) {
+    await apiPost(state.user, state.answers);
+    const data = await apiGet(state.user); // refresh streak after batch update
+    $("sumCorrect").textContent = state.correctCount;
+    $("sumTotal").textContent = state.quiz.length;
+    $("sumStreak").textContent = data.user.streak;
+    show("summaryScreen");
+  } else {
+    renderQuestion();
+  }
+};
+
+// --- Boot ---
+(async function boot() {
+  const saved = localStorage.getItem(LS_USER_KEY);
+  await initLogin();
+  if (saved) { state.user = saved; goHome(); }
+  else show("loginScreen");
+})();
+</script>
+</body>
+</html>
