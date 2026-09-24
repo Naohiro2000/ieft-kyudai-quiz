@@ -22,7 +22,10 @@
   .streak span { font-size:1rem; color:var(--muted); display:block; font-weight:400; }
   .stat-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #eee; }
   .stat-row:last-child { border-bottom:none; }
-  .qprogress { text-align:center; color:var(--muted); margin-bottom:8px; }
+  .qprogress { text-align:center; color:var(--muted); margin-bottom:4px; font-size:0.85rem; }
+  .progressbar { height:8px; background:#eee; border-radius:5px; overflow:hidden; margin-bottom:14px; }
+  .progressbar-fill { height:100%; background:var(--accent); transition:width .25s ease; }
+  .review-badge { display:inline-block; background:#ffe2d1; color:#c2410c; border-radius:20px; padding:2px 10px; font-size:0.75rem; font-weight:600; margin-bottom:6px; }
   .question { font-size:1.1rem; font-weight:600; margin-bottom:18px; line-height:1.5; }
   .choice { display:block; width:100%; text-align:left; background:#fff; border:2px solid #ddd; color:var(--text); margin-bottom:10px; padding:14px; border-radius:12px; font-weight:500; }
   .choice.correct { border-color:var(--good); background:#eafbea; }
@@ -66,7 +69,13 @@
 
   <!-- Home screen -->
   <div id="homeScreen" class="hidden">
-    <div class="top-nav"><span id="homeUserName"></span><span id="switchUserBtn" style="cursor:pointer;">切り替え</span></div>
+    <div class="top-nav">
+      <span id="homeUserName"></span>
+      <span>
+        <span id="langToggle" style="cursor:pointer;margin-right:14px;">🌐 <b id="langLabel">EN</b></span>
+        <span id="switchUserBtn" style="cursor:pointer;">切り替え</span>
+      </span>
+    </div>
     <div class="card">
       <div class="streak">🔥 <span id="streakNum">0</span><span>日連続</span></div>
     </div>
@@ -80,7 +89,9 @@
   <!-- Quiz screen -->
   <div id="quizScreen" class="hidden">
     <div class="qprogress"><span id="qIndex">1</span> / <span id="qTotal">1</span> 問</div>
+    <div class="progressbar"><div class="progressbar-fill" id="qProgressFill" style="width:0%"></div></div>
     <div class="card">
+      <div id="reviewBadge" class="review-badge hidden">🔁 復習ラウンド</div>
       <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px;" id="qProgram"></div>
       <div class="question" id="qText"></div>
       <div id="choicesBox"></div>
@@ -107,8 +118,11 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbyCojSmYOdUT9ZQjgRe3V8aotPUMb-tXvCbUMd1FSt1LO7f9EatP2RLJuCIl1ARW6rvtg/exec";
 const LS_USER_KEY = "ieft_quiz_user";
 const LS_ACCESS_KEY = "ieft_quiz_key";
+const LS_LANG_KEY = "ieft_quiz_lang";
+const QUIZ_SIZE = 10; // ponytail: fixed round size, no config UI for it
 
-let state = { user:null, accessKey:null, questions:[], idx:0, correctCount:0, answers:[], streak:0 };
+let state = { user:null, accessKey:null, questions:[], idx:0, correctCount:0, answers:[], streak:0,
+  lang: localStorage.getItem(LS_LANG_KEY) || "en" };
 
 const $ = (id) => document.getElementById(id);
 function show(id) {
@@ -133,6 +147,21 @@ function shuffle_(arr) {
   }
   return a;
 }
+
+// EN/JA text picker: falls back to JA if an EN field is missing.
+function qText(q, field) {
+  if (state.lang === "en" && q[field + "_en"]) return q[field + "_en"];
+  return q[field];
+}
+function qChoices(q) {
+  return (state.lang === "en" && q.choices_en) ? q.choices_en : q.choices;
+}
+$("langToggle").onclick = () => {
+  state.lang = state.lang === "en" ? "ja" : "en";
+  localStorage.setItem(LS_LANG_KEY, state.lang);
+  $("langLabel").textContent = state.lang.toUpperCase();
+};
+$("langLabel").textContent = state.lang.toUpperCase();
 
 // Shows a spinner + disables the button while fn() runs, so a slow GAS
 // cold-start network call never looks like a frozen page.
@@ -206,26 +235,41 @@ $("startBtn").onclick = () => withLoading($("startBtn"), "読み込み中…", s
 $("backHomeBtn").onclick = goHome;
 
 // --- Quiz (all client-side: no network per-question, batch POST at the end) ---
+// Round model: state.roundQueue is the list of questions still to answer in
+// the CURRENT round; state.missed collects ones answered wrong, becoming the
+// next round's queue. state.answers accumulates every (qid, correct) pair
+// across all rounds for the single batch POST at the very end.
 function startQuiz() {
   if (state.questions.length === 0) return;
-  state.idx = 0;
   state.correctCount = 0;
   state.answers = [];
-  // pre-shuffle choice order per question so the correct answer isn't always index 0
-  state.quiz = state.questions.map(q => {
-    const order = shuffle_([0,1,2,3]);
-    return { ...q, shuffledChoices: order.map(i => q.choices[i]), shuffledCorrectIdx: order.indexOf(q.correct_idx) };
-  });
+  state.totalInFirstRound = Math.min(state.questions.length, QUIZ_SIZE);
+  const picked = shuffle_(state.questions).slice(0, QUIZ_SIZE);
+  state.roundQueue = shuffleQuiz_(picked);
+  state.missed = [];
+  state.roundIdx = 0; // 0 = first pass, >0 = review round
+  state.qDoneInRound = 0;
   show("quizScreen");
   renderQuestion();
 }
 
+// pre-shuffle choice order per question so the correct answer isn't always index 0
+function shuffleQuiz_(questions) {
+  return questions.map(q => {
+    const order = shuffle_([0,1,2,3]);
+    const choices = qChoices(q);
+    return { ...q, shuffledChoices: order.map(i => choices[i]), shuffledCorrectIdx: order.indexOf(q.correct_idx) };
+  });
+}
+
 function renderQuestion() {
-  const q = state.quiz[state.idx];
-  $("qIndex").textContent = state.idx + 1;
-  $("qTotal").textContent = state.quiz.length;
+  const q = state.roundQueue[state.qDoneInRound];
+  $("qIndex").textContent = state.qDoneInRound + 1;
+  $("qTotal").textContent = state.roundQueue.length;
+  $("qProgressFill").style.width = Math.round((state.qDoneInRound / state.roundQueue.length) * 100) + "%";
+  $("reviewBadge").classList.toggle("hidden", state.roundIdx === 0);
   $("qProgram").textContent = q.program;
-  $("qText").textContent = q.question;
+  $("qText").textContent = qText(q, "question");
   $("feedbackBox").classList.add("hidden");
   $("nextBtn").classList.add("hidden");
   const box = $("choicesBox");
@@ -240,10 +284,11 @@ function renderQuestion() {
 }
 
 function answer(selectedIdx) {
-  const q = state.quiz[state.idx];
+  const q = state.roundQueue[state.qDoneInRound];
   const correct = selectedIdx === q.shuffledCorrectIdx;
-  if (correct) state.correctCount++;
+  if (correct && state.roundIdx === 0) state.correctCount++; // score = first-attempt accuracy
   state.answers.push({ qid: q.id, correct });
+  if (!correct) state.missed.push(q);
 
   [...document.querySelectorAll(".choice")].forEach((btn, i) => {
     btn.disabled = true;
@@ -252,23 +297,32 @@ function answer(selectedIdx) {
   });
 
   const fb = $("feedbackBox");
-  fb.innerHTML = `${correct ? "✅ 正解！" : "❌ 不正解"} ${q.explanation}<br><a href="${q.source_url}" target="_blank" rel="noopener">📄 元の資料を見る（${q.source_page || ""}）</a>`;
+  fb.innerHTML = `${correct ? "✅ 正解！" : "❌ 不正解"} ${qText(q, "explanation")}<br><a href="${q.source_url}" target="_blank" rel="noopener">📄 元の資料を見る（${q.source_page || ""}）</a>`;
   fb.classList.remove("hidden");
   $("nextBtn").classList.remove("hidden");
 }
 
 $("nextBtn").onclick = () => withLoading($("nextBtn"), "送信中…", async () => {
-  state.idx++;
-  if (state.idx >= state.quiz.length) {
-    await apiPost(state.user, state.answers);
-    const data = await apiGet(state.user); // refresh streak after batch update
-    $("sumCorrect").textContent = state.correctCount;
-    $("sumTotal").textContent = state.quiz.length;
-    $("sumStreak").textContent = data.user.streak;
-    show("summaryScreen");
-  } else {
+  state.qDoneInRound++;
+  if (state.qDoneInRound < state.roundQueue.length) {
     renderQuestion();
+    return;
   }
+  // Round finished: start a review round over the missed questions, or wrap up.
+  if (state.missed.length > 0) {
+    state.roundQueue = shuffleQuiz_(state.missed);
+    state.missed = [];
+    state.roundIdx++;
+    state.qDoneInRound = 0;
+    renderQuestion();
+    return;
+  }
+  await apiPost(state.user, state.answers);
+  const data = await apiGet(state.user); // refresh streak after batch update
+  $("sumCorrect").textContent = state.correctCount;
+  $("sumTotal").textContent = state.totalInFirstRound;
+  $("sumStreak").textContent = data.user.streak;
+  show("summaryScreen");
 });
 
 // --- Boot ---
