@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>ひぐりんご - 九大プログラム学習</title>
 <style>
   :root { --accent:#ff6b35; --bg:#fafafa; --card:#fff; --text:#222; --muted:#888; --good:#2e9e4f; --bad:#e0453c; }
@@ -69,21 +69,54 @@
     animation:rise 1.3s ease-out var(--d) forwards; }
   @keyframes rise { from { opacity:0; transform:translate(0,0) scale(.5); } 15% { opacity:1; } to { opacity:0; transform:translate(var(--drift),-50vh) scale(1.3) rotate(var(--rot)); } }
   /* --- ひぐりんご character (inline SVG, mood = class on .higu) --- */
-  .higu { display:inline-block; width:64px; height:64px; }
+  .higu { display:inline-block; width:64px; height:64px; flex:none; }
   .higu.big { width:110px; height:110px; }
-  .higu svg { width:100%; height:100%; overflow:visible; transform-origin:50% 95%; animation:sway 2.4s ease-in-out infinite; }
+  /* Transforms live on SVG groups in viewBox units: .body (actions) > .sway
+     (idle rock). The shadow is outside both, so it stays on the ground and
+     only shrinks when the body leaves it. */
+  .higu svg { width:100%; height:100%; overflow:visible; }
+  .higu .body, .higu .sway, .higu .shadow { transform-box:view-box; }
+  .higu .body { transform-origin:50px 58px; }
+  .higu .sway { transform-origin:50px 95px; animation:sway 2.4s ease-in-out infinite; }
+  .higu .shadow { transform-origin:50px 96px; }
   @keyframes sway { 50% { transform:rotate(5deg); } 0%,100% { transform:rotate(-5deg); } }
   .higu .mood { display:none; }
   .higu.normal .m-normal, .higu.happy .m-happy, .higu.combo .m-combo, .higu.sad .m-sad { display:inline; }
   .higu.happy .m-joy, .higu.combo .m-joy { display:inline; }
-  .higu.roll { animation:rollIn .7s cubic-bezier(.3,1.3,.5,1); }
-  @keyframes rollIn { from { transform:translateX(-140px) rotate(-360deg); } }
-  .higu.jump { animation:hop .5s ease; }
+  .higu.roll svg { animation:rollSlide .7s cubic-bezier(.3,1.3,.5,1); }
+  .higu.roll .body { animation:rollTurn .7s cubic-bezier(.3,1.3,.5,1); }
+  @keyframes rollSlide { from { transform:translateX(-140px); } }
+  @keyframes rollTurn { from { transform:rotate(-360deg); } }
+  .higu.jump .body { animation:hop .5s ease; }
+  .higu.jump .shadow { animation:shrink .5s ease; }
   @keyframes hop { 40% { transform:translateY(-22px); } 70% { transform:translateY(0) scaleY(.9); } }
-  .higu.spin { animation:spinHop .8s ease; }
+  .higu.spin .body { animation:spinHop .8s ease; }
+  .higu.spin .shadow { animation:shrink .8s ease; }
   @keyframes spinHop { 50% { transform:translateY(-30px) rotate(360deg); } to { transform:rotate(360deg); } }
-  .higu.shake { animation:shake .45s ease; }
+  @keyframes shrink { 45% { transform:scale(.55); opacity:.5; } }
+  .higu.shake .body { animation:shake .45s ease; }
   .higu-lane { height:64px; margin:-4px 0 6px; }
+  /* --- home layout --- */
+  .hero { display:flex; align-items:center; gap:14px; padding:14px 18px; }
+  .hero-streak { font-size:1.15rem; font-weight:800; }
+  .hero-sub { color:var(--muted); font-size:.85rem; margin-top:2px; }
+  .card-title { font-weight:700; margin-bottom:6px; }
+  .card-title small { color:var(--muted); font-weight:400; }
+  .tier-row { display:flex; align-items:center; gap:8px; font-size:.8rem; margin-top:6px; }
+  .tier-row span:first-child { width:3em; color:var(--muted); }
+  .tier-row .lb-track { flex:1; margin:0; height:8px; }
+  .tier-row b { width:2.8em; text-align:right; }
+  .link-row { display:flex; justify-content:space-between; cursor:pointer; font-weight:600; }
+  .link-row span { color:var(--muted); }
+  #homeScreen { padding-bottom:calc(90px + env(safe-area-inset-bottom)); }
+  #homeScreen.two-btn { padding-bottom:calc(150px + env(safe-area-inset-bottom)); }
+  .bottom-bar { position:fixed; left:0; right:0; bottom:0; z-index:5;
+    padding:14px 16px calc(12px + env(safe-area-inset-bottom)); background:linear-gradient(rgba(250,250,250,0), var(--bg) 35%); }
+  .bottom-bar > div { max-width:448px; margin:0 auto; }
+  .ref-group { margin-bottom:16px; }
+  .ref-group a { display:block; padding:10px 0; border-bottom:1px solid #eee; color:var(--text); text-decoration:none; font-size:.92rem; word-break:break-word; }
+  .ref-group a:last-child { border-bottom:none; }
+  .ref-group a::after { content:" ↗"; color:var(--muted); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; } }
 </style>
 </head>
@@ -124,20 +157,30 @@
         <span id="switchUserBtn" style="cursor:pointer;">切り替え</span>
       </span>
     </div>
-    <div class="card" style="text-align:center;">
-      <div class="higu big normal" id="higuHome"></div>
-      <div class="streak">🔥 <span id="streakNum">0</span><span>日連続</span></div>
+    <div class="card hero">
+      <div class="higu normal" id="higuHome"></div>
+      <div>
+        <div class="hero-streak">🔥 <span id="streakNum">0</span> 日連続</div>
+        <div class="hero-sub">今日 <b id="dueCount">-</b> 問 ・ 累計 <b id="totalSeen">-</b> 問</div>
+      </div>
     </div>
     <div class="card">
-      <div class="stat-row"><span>今日学習可能な問題</span><b id="dueCount">-</b></div>
-      <div class="stat-row"><span>これまでの累計学習数</span><b id="totalSeen">-</b></div>
-    </div>
-    <button id="startBtn">クイズをはじめる</button>
-    <button id="triviaBtn" class="trivia hidden">🇹🇷 雑学だけモード</button>
-    <div class="card" style="margin-top:16px;">
-      <div style="font-weight:700;margin-bottom:6px;">🏆 ランキング <small style="color:#888;font-weight:400;">習得ポイント</small></div>
+      <div class="card-title">🏆 ランキング <small>習得ポイント</small></div>
       <div id="leaderboard"></div>
     </div>
+    <div class="card">
+      <div class="card-title">📊 あなたの習得度</div>
+      <div id="radar"></div>
+      <div id="tierBars"></div>
+    </div>
+    <div class="card link-row" id="refsBtn">📚 参考資料（出典リンク一覧）<span>›</span></div>
+  </div>
+
+  <!-- References screen -->
+  <div id="refsScreen" class="hidden">
+    <div class="top-nav"><span id="refsBackBtn" style="cursor:pointer;">‹ ホーム</span><span></span></div>
+    <h1>📚 参考資料</h1>
+    <div id="refsList"></div>
   </div>
 
   <!-- Quiz screen -->
@@ -175,6 +218,14 @@
 
 </div>
 
+<!-- Home action bar: outside .screen so the fade-in transform can't break position:fixed -->
+<div id="homeBar" class="bottom-bar hidden">
+  <div>
+    <button id="triviaBtn" class="trivia hidden">🇹🇷 雑学だけモード</button>
+    <button id="startBtn">クイズをはじめる</button>
+  </div>
+</div>
+
 <script>
 // ponytail: API_URL is the one GAS deployment; update after redeploy.
 const API_URL = "https://script.google.com/macros/s/AKfycbyCojSmYOdUT9ZQjgRe3V8aotPUMb-tXvCbUMd1FSt1LO7f9EatP2RLJuCIl1ARW6rvtg/exec";
@@ -188,7 +239,9 @@ let state = { user:null, accessKey:null, questions:[], idx:0, correctCount:0, an
 
 const $ = (id) => document.getElementById(id);
 function show(id) {
-  ["keyScreen","loginScreen","homeScreen","quizScreen","summaryScreen"].forEach(s => $(s).classList.toggle("hidden", s !== id));
+  ["keyScreen","loginScreen","homeScreen","refsScreen","quizScreen","summaryScreen"].forEach(s => $(s).classList.toggle("hidden", s !== id));
+  $("homeBar").classList.toggle("hidden", id !== "homeScreen");
+  window.scrollTo(0, 0);
 }
 
 async function apiGet(user) {
@@ -211,7 +264,8 @@ const lsSet = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const cacheFor = (user) => lsGet(LS_CACHE, {})[user];
 function saveCache(user, data) {
   const all = lsGet(LS_CACHE, {});
-  all[user] = { questions: data.questions, user: data.user };
+  all[user] = { questions: data.questions, user: data.user, mastery: data.mastery || all[user]?.mastery || {} };
+  all.__refs = data.refs || all.__refs;
   all.__users = data.users || all.__users;
   all.__lb = data.leaderboard || all.__lb;
   lsSet(LS_CACHE, all);
@@ -390,9 +444,54 @@ function renderHome() {
   // Basics come first: trivia-only mode unlocks once no basic question is due today.
   const basicLeft = c.questions.some(q => (q.tier || "basic") === "basic");
   $("triviaBtn").classList.toggle("hidden", basicLeft || !c.questions.some(q => q.tier === "trivia"));
+  $("homeScreen").classList.toggle("two-btn", !$("triviaBtn").classList.contains("hidden"));
   renderLeaderboard();
+  renderMastery(c.mastery || {});
   show("homeScreen");
 }
+// Radar of per-category mastery (ENG/ISI/BIO/COMMON/IEFT/TR) + tier bars.
+// Plain SVG, no chart lib: 6 axes, 3 grid rings, one filled polygon.
+const RADAR_AXES = ["ENG","ISI","BIO","COMMON","IEFT","TR"];
+function radarSVG(vals) {
+  const cx = 120, cy = 105, R = 72, n = RADAR_AXES.length;
+  const pt = (i, r) => { const a = -Math.PI / 2 + 2 * Math.PI * i / n; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+  const poly = (r) => RADAR_AXES.map((_, i) => pt(i, typeof r === "function" ? r(i) : r).map(v => v.toFixed(1)).join(",")).join(" ");
+  const rings = [1/3, 2/3, 1].map(f => `<polygon points="${poly(R * f)}" fill="none" stroke="#e5e5e5"/>`).join("");
+  const spokes = RADAR_AXES.map((_, i) => { const [x, y] = pt(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#e5e5e5"/>`; }).join("");
+  const labels = RADAR_AXES.map((k, i) => {
+    const [x, y] = pt(i, R + 20);
+    return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-size="10.5" fill="#555">${(CAT_LABEL[k] || k).replace("🇹🇷 ", "")}<tspan x="${x}" dy="12" font-weight="700" fill="var(--accent)">${vals[k] || 0}%</tspan></text>`;
+  }).join("");
+  const shape = `<polygon points="${poly(i => R * Math.max(0.04, (vals[RADAR_AXES[i]] || 0) / 100))}" fill="rgba(255,107,53,.28)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>`;
+  return `<svg viewBox="0 0 240 220" style="width:100%;max-width:320px;display:block;margin:0 auto;">${rings}${spokes}${shape}${labels}</svg>`;
+}
+function renderMastery(m) {
+  $("radar").innerHTML = radarSVG(m);
+  $("tierBars").innerHTML = [["basic","基本"],["adv","発展"],["trivia","雑学"]].map(([k, label]) => {
+    const v = m["tier_" + k] || 0;
+    return `<div class="tier-row"><span>${label}</span><div class="lb-track"><div class="lb-fill" style="width:${v}%"></div></div><b>${v}%</b></div>`;
+  }).join("");
+}
+function renderRefs() {
+  const refs = cacheFor("__refs") || [];
+  const order = ["ENG","ISI","BIO","COMMON","IEFT","TR"];
+  const name = (u) => {
+    const d = decodeURIComponent(u);
+    if (d.includes("wikipedia.org/wiki/")) return d.split("/wiki/")[1].replace(/_/g, " ");
+    if (d.endsWith(".pdf")) return "📄 " + d.split("/").pop();
+    return d.replace(/^https?:\/\//, "");
+  };
+  // Group by the source's own program: a PDF cited by COMMON questions still
+  // belongs under the program it describes (first program seen wins).
+  $("refsList").innerHTML = order.map(p => {
+    const rs = refs.filter(r => r.program === p);
+    if (!rs.length) return "";
+    return `<div class="card ref-group"><span class="cat cat-${p}">${CAT_LABEL[p]}</span>${rs.map(r =>
+      `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(name(r.url))}</a>`).join("")}</div>`;
+  }).join("") || `<div class="empty">一度ホームを読み込むと表示されます</div>`;
+}
+$("refsBtn").onclick = () => { renderRefs(); show("refsScreen"); };
+$("refsBackBtn").onclick = renderHome;
 function renderLeaderboard() {
   const lb = cacheFor("__lb") || [];
   const top = Math.max(1, ...lb.map(r => r.score));
@@ -499,7 +598,8 @@ const HIGU_SVG = (() => {
     return (cx + rr * Math.cos(a)).toFixed(1) + "," + (cy + rr * Math.sin(a)).toFixed(1);
   }).join(" ")}"/>`;
   return `<svg viewBox="0 0 100 100" aria-label="ひぐりんご">
-  <ellipse cx="50" cy="96" rx="28" ry="3.5" fill="#000" opacity=".12"/>
+  <ellipse class="shadow" cx="50" cy="96" rx="28" ry="3.5" fill="#000" opacity=".12"/>
+  <g class="body"><g class="sway">
   <path d="M50 22C32 10 9 22 11 52C13 80 31 95 50 95C69 95 87 80 89 52C91 22 68 10 50 22Z" fill="#e3342f"/>
   <ellipse cx="27" cy="38" rx="4.5" ry="8" fill="#fff" opacity=".3" transform="rotate(30 27 38)"/>
   <ellipse cx="50" cy="60" rx="25" ry="23" fill="#fde7cf"/>
@@ -518,6 +618,7 @@ const HIGU_SVG = (() => {
     <path d="M46 ${my+2}q4-4 8 0" stroke="#c62828" stroke-width="2.2" fill="none" stroke-linecap="round"/></g>
   <path d="M40 ${my-3}q5-5 10-1q5-4 10 1q-5 3-10 0q-5 3-10 0z" fill="${INK}"/>
   <path d="M45 ${my+5}Q50 ${my+13} 55 ${my+5}Q50 ${my+7} 45 ${my+5}Z" fill="${INK}"/>
+  </g></g>
 </svg>`;
 })();
 document.querySelectorAll(".higu").forEach(el => el.innerHTML = HIGU_SVG);
