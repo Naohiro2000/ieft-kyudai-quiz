@@ -121,7 +121,7 @@
   .ref-group a:last-child { border-bottom:none; }
   .ref-group a::after { content:" ↗"; color:var(--muted); }
   .higu.skin-aoringo { --higu-color: #9ccc3c; }
-  #higuHome { cursor:pointer; }
+  #heroCard { cursor:pointer; }
   .lb-icon { width:26px; height:26px; flex:none; }
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:20; padding:20px; }
   .modal-card { background:var(--card); border-radius:18px; padding:26px 22px; max-width:340px; text-align:center; }
@@ -168,7 +168,7 @@
         <span id="switchUserBtn" style="cursor:pointer;">切り替え</span>
       </span>
     </div>
-    <div class="card hero">
+    <div class="card hero" id="heroCard">
       <div class="higu normal" id="higuHome"></div>
       <div>
         <div class="hero-streak">🔥 <span id="streakNum">0</span> 日連続</div>
@@ -359,7 +359,7 @@ function openItemPicker() {
   const c = cacheFor(state.user);
   const owned = c.user.items || [];
   const options = owned.length === 0
-    ? [`<p>まだアイテムがありません。${STREAK_ITEM_DAYS}日ストリークで最初のアイテムがもらえます。</p>`]
+    ? [`<p>まだアイテムがありません。</p>`]
     : [`<button class="secondary" data-item="">きせかえなし</button>`]
         .concat(owned.map(id => `<button class="secondary" data-item="${id}">${ITEMS[id].emoji} ${ITEMS[id].name}</button>`));
   const modal = showModal(`
@@ -383,7 +383,7 @@ async function equipItem(item, modal) {
     if (data && !data.error) { saveCache(state.user, data); renderLeaderboard(); }
   } catch {} // best-effort: local state already reflects the choice
 }
-$("higuHome").onclick = openItemPicker;
+$("heroCard").onclick = openItemPicker;
 
 function shuffle_(arr) {
   const a = arr.slice();
