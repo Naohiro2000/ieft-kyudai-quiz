@@ -120,6 +120,14 @@
   .ref-group a { display:block; padding:10px 0; border-bottom:1px solid #eee; color:var(--text); text-decoration:none; font-size:.92rem; word-break:break-word; }
   .ref-group a:last-child { border-bottom:none; }
   .ref-group a::after { content:" ↗"; color:var(--muted); }
+  .higu.skin-aoringo { --higu-color: #9ccc3c; }
+  #higuHome { cursor:pointer; }
+  .lb-icon { width:26px; height:26px; flex:none; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:20; padding:20px; }
+  .modal-card { background:var(--card); border-radius:18px; padding:26px 22px; max-width:340px; text-align:center; }
+  .modal-card h2 { margin:6px 0 4px; font-size:1.25rem; }
+  .modal-card p { color:var(--muted); margin:4px 0 16px; font-size:.92rem; }
+  .item-name { font-weight:700; margin-top:4px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; } }
 </style>
 </head>
@@ -294,12 +302,87 @@ function flushOutbox() {
       lsSet(LS_OUTBOX, box);
       if (!box.some(j => j.user === job.user)) { // server state is now authoritative
         saveCache(job.user, { ...data, users: cacheFor("__users") });
+        if (data.newItem) {
+          const pending = lsGet(LS_PENDING_ITEM, {});
+          pending[job.user] = data.newItem;
+          lsSet(LS_PENDING_ITEM, pending);
+        }
         if (job.user === state.user && !$("homeScreen").classList.contains("hidden")) renderHome();
       }
     }
   })().catch(() => {}).finally(() => { flushing = null; });
   return flushing;
 }
+
+// --- Items / skins ---
+// ponytail: one item today -> a flat map is plenty. Grow to an array with
+// unlock conditions when a second item ships.
+const ITEMS = { aoringo: { name: "あおりんご", emoji: "🍏" } };
+function applySkin(el, equipped) {
+  el.className = el.className.replace(/\bskin-\S+\b/g, "").trim();
+  if (equipped && ITEMS[equipped]) el.classList.add("skin-" + equipped);
+}
+// Tiny leaderboard portrait: same SVG, sized down, colored by that row's equipped item.
+function lbIconHTML(equipped) {
+  return `<div class="higu lb-icon${equipped && ITEMS[equipped] ? " skin-" + equipped : ""}">${HIGU_SVG}</div>`;
+}
+function showModal(html) {
+  const el = document.createElement("div");
+  el.className = "modal-overlay";
+  el.innerHTML = `<div class="modal-card">${html}</div>`;
+  el.onclick = (e) => { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
+  return el;
+}
+// Fires once per award: flushOutbox stashes it here, next home paint consumes it.
+const LS_PENDING_ITEM = "ieft_pending_item";
+function maybeShowItemModal() {
+  const pending = lsGet(LS_PENDING_ITEM, {});
+  const item = pending[state.user];
+  if (!item || !ITEMS[item]) return;
+  delete pending[state.user];
+  lsSet(LS_PENDING_ITEM, pending);
+  confetti(30);
+  const modal = showModal(`
+    <div class="higu big skin-${item}" id="modalHigu"></div>
+    <h2>🎉 ${STREAK_ITEM_DAYS}日ストリークおめでとう！</h2>
+    <p>アイテムがプレゼントされました。</p>
+    <div class="item-name">${ITEMS[item].emoji} ${ITEMS[item].name}</div>
+    <button id="modalCloseBtn">やった！</button>`);
+  modal.querySelector("#modalHigu").innerHTML = HIGU_SVG;
+  modal.querySelector("#modalCloseBtn").onclick = () => modal.remove();
+}
+const STREAK_ITEM_DAYS = 3; // ponytail: mirrors GAS STREAK_ITEM.days; keep in sync if that changes.
+
+// Opens a picker over owned items (only one today, but built for more).
+function openItemPicker() {
+  const c = cacheFor(state.user);
+  const owned = c.user.items || [];
+  if (owned.length === 0) return;
+  const options = [`<button class="secondary" data-item="">きせかえなし</button>`]
+    .concat(owned.map(id => `<button class="secondary" data-item="${id}">${ITEMS[id].emoji} ${ITEMS[id].name}</button>`));
+  const modal = showModal(`
+    <div class="higu big" id="pickerHigu"></div>
+    <h2>きせかえ</h2>
+    ${options.join("")}`);
+  modal.querySelector("#pickerHigu").innerHTML = HIGU_SVG;
+  applySkin(modal.querySelector("#pickerHigu"), c.user.equipped);
+  modal.querySelectorAll("[data-item]").forEach(btn => btn.onclick = () => equipItem(btn.dataset.item, modal));
+}
+async function equipItem(item, modal) {
+  const c = cacheFor(state.user);
+  c.user.equipped = item;
+  saveCache(state.user, c);
+  applySkin($("higuHome"), item);
+  modal.remove();
+  try {
+    const res = await fetch(API_URL, { method: "POST", headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ key: state.accessKey, user: state.user, action: "equip", item }) });
+    const data = await res.json();
+    if (data && !data.error) { saveCache(state.user, data); renderLeaderboard(); }
+  } catch {} // best-effort: local state already reflects the choice
+}
+$("higuHome").onclick = openItemPicker;
 
 function shuffle_(arr) {
   const a = arr.slice();
@@ -448,9 +531,11 @@ function renderHome() {
   const basicLeft = c.questions.some(q => (q.tier || "basic") === "basic");
   $("triviaBtn").classList.toggle("hidden", basicLeft || !c.questions.some(q => q.tier === "trivia"));
   $("homeScreen").classList.toggle("two-btn", !$("triviaBtn").classList.contains("hidden"));
+  applySkin($("higuHome"), c.user.equipped);
   renderLeaderboard();
   renderMastery(c.mastery || {});
   show("homeScreen");
+  maybeShowItemModal();
 }
 // Radar of per-category mastery (ENG/ISI/BIO/COMMON/IEFT/TR) + tier bars.
 // Plain SVG, no chart lib: 6 axes, 3 grid rings, one filled polygon.
@@ -502,6 +587,7 @@ function renderLeaderboard() {
   $("leaderboard").innerHTML = lb.map((r, i) => `
     <div class="lb-row${r.user === state.user ? " me" : ""}">
       <span class="lb-rank">${medal[i] || i + 1}</span>
+      ${lbIconHTML(r.equipped)}
       <div class="lb-bar">
         <div class="lb-name"><span>${esc(r.user)}${r.streak ? ` <small>🔥${r.streak}</small>` : ""}</span><b>${r.score}</b></div>
         <div class="lb-track"><div class="lb-fill" style="width:${Math.round(r.score / top * 100)}%"></div></div>
@@ -603,7 +689,7 @@ const HIGU_SVG = (() => {
   return `<svg viewBox="0 0 100 100" aria-label="ひぐりんご">
   <ellipse class="shadow" cx="50" cy="96" rx="28" ry="3.5" fill="#000" opacity=".12"/>
   <g class="body"><g class="sway">
-  <path d="M50 22C32 10 9 22 11 52C13 80 31 95 50 95C69 95 87 80 89 52C91 22 68 10 50 22Z" fill="#e3342f"/>
+  <path d="M50 22C32 10 9 22 11 52C13 80 31 95 50 95C69 95 87 80 89 52C91 22 68 10 50 22Z" fill="var(--higu-color, #e3342f)"/>
   <ellipse cx="27" cy="38" rx="4.5" ry="8" fill="#fff" opacity=".3" transform="rotate(30 27 38)"/>
   <ellipse cx="50" cy="60" rx="25" ry="23" fill="#fde7cf"/>
   <path d="M25 56C25 40 36 35 50 35S75 40 75 56C70 46 60 43 50 43S30 46 25 56Z" fill="${INK}"/>
