@@ -324,7 +324,7 @@ function applySkin(el, equipped) {
 }
 // Tiny leaderboard portrait: same SVG, sized down, colored by that row's equipped item.
 function lbIconHTML(equipped) {
-  return `<div class="higu lb-icon${equipped && ITEMS[equipped] ? " skin-" + equipped : ""}">${HIGU_SVG}</div>`;
+  return `<div class="higu normal lb-icon${equipped && ITEMS[equipped] ? " skin-" + equipped : ""}">${HIGU_SVG}</div>`;
 }
 function showModal(html) {
   const el = document.createElement("div");
@@ -344,7 +344,7 @@ function maybeShowItemModal() {
   lsSet(LS_PENDING_ITEM, pending);
   confetti(30);
   const modal = showModal(`
-    <div class="higu big skin-${item}" id="modalHigu"></div>
+    <div class="higu big normal skin-${item}" id="modalHigu"></div>
     <h2>🎉 ${STREAK_ITEM_DAYS}日ストリークおめでとう！</h2>
     <p>アイテムがプレゼントされました。</p>
     <div class="item-name">${ITEMS[item].emoji} ${ITEMS[item].name}</div>
@@ -362,7 +362,7 @@ function openItemPicker() {
   const options = [`<button class="secondary" data-item="">きせかえなし</button>`]
     .concat(owned.map(id => `<button class="secondary" data-item="${id}">${ITEMS[id].emoji} ${ITEMS[id].name}</button>`));
   const modal = showModal(`
-    <div class="higu big" id="pickerHigu"></div>
+    <div class="higu big normal" id="pickerHigu"></div>
     <h2>きせかえ</h2>
     ${options.join("")}`);
   modal.querySelector("#pickerHigu").innerHTML = HIGU_SVG;
