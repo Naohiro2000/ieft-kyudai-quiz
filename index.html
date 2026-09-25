@@ -358,9 +358,10 @@ const STREAK_ITEM_DAYS = 3; // ponytail: mirrors GAS STREAK_ITEM.days; keep in s
 function openItemPicker() {
   const c = cacheFor(state.user);
   const owned = c.user.items || [];
-  if (owned.length === 0) return;
-  const options = [`<button class="secondary" data-item="">きせかえなし</button>`]
-    .concat(owned.map(id => `<button class="secondary" data-item="${id}">${ITEMS[id].emoji} ${ITEMS[id].name}</button>`));
+  const options = owned.length === 0
+    ? [`<p>まだアイテムがありません。${STREAK_ITEM_DAYS}日ストリークで最初のアイテムがもらえます。</p>`]
+    : [`<button class="secondary" data-item="">きせかえなし</button>`]
+        .concat(owned.map(id => `<button class="secondary" data-item="${id}">${ITEMS[id].emoji} ${ITEMS[id].name}</button>`));
   const modal = showModal(`
     <div class="higu big normal" id="pickerHigu"></div>
     <h2>きせかえ</h2>
